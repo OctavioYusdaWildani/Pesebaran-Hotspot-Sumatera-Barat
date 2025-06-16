@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Peta Hotspot Sumbar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="sumatera_barat.js"></script>
+    <style>
+      body {
+        margin: 0;
+      }
+        .container-flex {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+        max-width: 100%;
+      }
+
+      #map {
+        height: 90vh;
+        width: 100%;
+        max-width: 1000px;
+        border: 1px solid #ccc;
+      }
+
+      /* Sidebar (info, tombol, dropdown) */
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        min-width: 220px;
+      }
+
+      .info {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 0 6px rgba(0, 0, 0, 0.2);
+        font: 14px Arial, sans-serif;
+      }
+
+      #backButton {
+        background-color: #f0f0f0;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font: 14px Arial, sans-serif;
+        box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+      }
+
+      #yearSelector {
+        background: white;
+        padding: 10px;
+        border-radius: 6px;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+        font: 14px Arial, sans-serif;
+      }
+
+       #kabupatenSelector {
+        display: flex;
+        background: white;
+        padding: 10px;
+        border-radius: 6px;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+        font: 14px Arial, sans-serif;
+      }
+
+      .chart-container {
+        background: white;
+        padding: 10px;
+        border-radius: 6px;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        max-width: 500px;
+        height: 500px;
+      }
+
+      .subdistrict-label {
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 3px;
+        padding: 2px 6px;
+        font-weight: bold;
+        font-size: 12px;
+        color: #333;
+        text-align: center;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+      <div class="container-flex">
+        <!-- Peta di sebelah kiri -->
+        <div id="map"></div>
+
+        <!-- Sidebar di sebelah kanan -->
+        <div class="sidebar">
+          <div class="info" id="info">Arahkan ke wilayah</div>
+          <div id="backButton">⬅ Kembali ke Kabupaten</div>
+          <div id="yearSelector">
+            <label for="yearDropdown">Tahun:</label>
+            <select id="yearDropdown">
+              <option value="all">Tahun</option>
+              <option>2019</option>
+              <option>2020</option>
+              <option>2021</option>
+              <option>2022</option>
+              <option selected>2023</option>
+            </select>
+          </div>
+          <div id="kabupatenSelector">
+            <label for="kabupatenDropdown"></label><br>
+            <select id="kabupatenDropdown">
+              <option value="all">Kabupaten</option>
+            </select>
+          </div>
+          <!-- Grafik batang -->
+          <div class="chart-container">
+            <canvas id="barChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <script>
+  const map = L.map("map").setView([-0.95, 100.35], 8);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+  let districtLayer,
+    subdistrictLayer,
+    currentHoveredLayer = null;
+  const backButton = document.getElementById("backButton");
+  const infoBox = document.getElementById("info");
+  const yearDropdown = document.getElementById("yearDropdown");
+  let selectedYear = yearDropdown.value;
+
+  let hotspotData = [];
+  let filteredHotspot = [];
+
+  const hotspotLayer = L.layerGroup().addTo(map);
+
+  yearDropdown.addEventListener("change", () => {
+    selectedYear = yearDropdown.value;
+    updateHotspotLayer();
+    infoBox.innerHTML = "Arahkan ke wilayah";
+  });
+
+  function updateHotspotLayer() {
+    hotspotLayer.clearLayers();
+    filteredHotspot = hotspotData.filter((d) => {
+      const year = d.Tanggal?.split("-")[2];
+      return selectedYear === "all" || year === selectedYear;
+    });
+
+    filteredHotspot.forEach((d) => {
+      if (!d.Latitude || !d.Longitude) return;
+      const marker = L.circleMarker(
+        [parseFloat(d.Latitude), parseFloat(d.Longitude)],
+        {
+          radius: 6,
+          fillColor: "#ff0000",
+          color: "#b30000",
+          weight: 1,
+          fillOpacity: 0.8,
+        }
+      ).bindPopup(`
+        <b>Lokasi:</b> ${d.Desa}, ${d.Kecamatan}, ${d["Kab Kota"]}<br/>
+        <b>Tanggal:</b> ${d.Tanggal}<br/>
+        <b>Waktu:</b> ${d.Waktu}<br/>
+        <b>Satelit:</b> ${d.Satelit}<br/>
+        <b>Confidence:</b> ${d.Confidence}
+      `);
+      marker.addTo(hotspotLayer);
+    });
+
+    updateBarChart(); // panggil fungsi grafik
+  }
+
+  function highlightFeature(e, layerGroup) {
+    if (currentHoveredLayer) layerGroup.resetStyle(currentHoveredLayer);
+    const layer = e.target;
+    layer.setStyle({ weight: 3, color: "black", fillOpacity: 1 });
+    currentHoveredLayer = layer;
+
+    const props = layer.feature.properties;
+    const nama = props.sub_district || props.district;
+
+    let count = 0;
+    filteredHotspot.forEach((d) => {
+      const point = turf.point([
+        parseFloat(d.Longitude),
+        parseFloat(d.Latitude),
+      ]);
+      if (turf.booleanPointInPolygon(point, layer.feature)) {
+        count++;
+      }
+    });
+
+    infoBox.innerHTML = `<b>${nama}</b><br/>Hotspot: ${count}`;
+  }
+
+  function resetHighlight(e, layerGroup) {
+    layerGroup.resetStyle(e.target);
+    currentHoveredLayer = null;
+    infoBox.innerHTML = "Arahkan ke wilayah";
+  }
+
+  function resetToDistrict() {
+    if (subdistrictLayer) map.removeLayer(subdistrictLayer);
+    if (districtLayer) map.removeLayer(districtLayer);
+    backButton.style.display = "none";
+    showDistricts();
+  }
+
+  function showDistricts() {
+    const grouped = {};
+    sumbarGeojson.features.forEach((f) => {
+      const dist = f.properties.district;
+      if (!grouped[dist]) grouped[dist] = [];
+      grouped[dist].push(turf.clone(f));
+    });
+
+    const features = [];
+    for (const [district, parts] of Object.entries(grouped)) {
+      let merged = parts[0];
+      for (let i = 1; i < parts.length; i++) {
+        try {
+          merged = turf.union(merged, parts[i]);
+        } catch (err) {
+          continue;
+        }
+      }
+      merged.properties = { district };
+      features.push(merged);
+    }
+
+    districtLayer = L.geoJSON(features, {
+      style: {
+        fillColor: "#aadaff",
+        weight: 1,
+        color: "#ffffff",
+        fillOpacity: 0.7,
+      },
+      onEachFeature: (f, l) => {
+        l.on({
+          mouseover: (e) => highlightFeature(e, districtLayer),
+          mouseout: (e) => resetHighlight(e, districtLayer),
+          click: () => showSubdistricts(f.properties.district),
+        });
+      },
+    }).addTo(map);
+  }
+
+  function showSubdistricts(districtName) {
+    if (districtLayer) map.removeLayer(districtLayer);
+    if (subdistrictLayer) map.removeLayer(subdistrictLayer);
+
+    const subs = sumbarGeojson.features.filter(
+      (f) => f.properties.district === districtName
+    );
+    subdistrictLayer = L.geoJSON(subs, {
+      style: {
+        fillColor: "#fdbb84",
+        weight: 1,
+        color: "white",
+        fillOpacity: 0.5,
+      },
+      onEachFeature: (f, l) => {
+        l.on({
+          mouseover: (e) => highlightFeature(e, subdistrictLayer),
+          mouseout: (e) => resetHighlight(e, subdistrictLayer),
+        });
+        l.bindTooltip(f.properties.sub_district, {
+          direction: "center",
+          className: "subdistrict-label",
+          sticky: true,
+        });
+      },
+    }).addTo(map);
+    map.fitBounds(subdistrictLayer.getBounds());
+    backButton.style.display = "block";
+  }
+
+  backButton.onclick = resetToDistrict;
+
+  // Ambil data dari file hotspot.json
+  fetch("hotspot.json")
+    .then((response) => response.json())
+    .then((data) => {
+      hotspotData = data;
+      resetToDistrict();
+      updateHotspotLayer();
+    })
+    .catch((err) => {
+      console.error("Gagal memuat hotspot.json:", err);
+    });
+
+  //  updateBarChart
+  let barChart;
+  
+  function updateBarChart() {
+    const monthLabels = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+    const monthlyCount = Array(12).fill(0);
+
+    const selectedKabupaten = document.getElementById("kabupatenDropdown").value;
+
+    filteredHotspot.forEach((d) => {
+      if (!d.Tanggal) return;
+      const parts = d.Tanggal.split("-");
+      const year = parts[2];
+      const month = parseInt(parts[1], 10) - 1;
+
+      if ((selectedYear === "all" || year === selectedYear) &&
+          (selectedKabupaten === "all" || d["Kab Kota"] === selectedKabupaten)) {
+        if (month >= 0 && month < 12) monthlyCount[month]++;
+      }
+    });
+
+    if (barChart) {
+      barChart.data.datasets[0].data = monthlyCount;
+      barChart.update();
+    } else {
+      const ctx = document.getElementById("barChart").getContext("2d");
+      barChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: monthLabels,
+          datasets: [
+            {
+              label: "Jumlah Hotspot",
+              data: monthlyCount,
+              backgroundColor: "#ff5733",
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  // Isi dropdown kabupaten dari data
+function populateKabupatenDropdown() {
+  const dropdown = document.getElementById("kabupatenDropdown");
+  const kabupatens = [...new Set(hotspotData.map(d => d["Kab Kota"]).filter(Boolean))].sort();
+
+  kabupatens.forEach(kab => {
+    const option = document.createElement("option");
+    option.value = kab;
+    option.textContent = kab;
+    dropdown.appendChild(option);
+  });
+}
+
+// Tambahkan event listener dropdown tahun
+document.getElementById("yearDropdown").addEventListener("change", function () {
+  selectedYear = this.value;
+
+  const selectedKabupaten = document.getElementById("kabupatenDropdown").value;
+  if (selectedKabupaten === "all") {
+    filteredHotspot = hotspotData;
+  } else {
+    filteredHotspot = hotspotData.filter(d => d["Kab Kota"] === selectedKabupaten);
+  }
+
+  updateBarChart();
+  if (typeof updateHotspotLayer === "function") updateHotspotLayer();
+});
+
+// Tambahkan event listener dropdown kabupaten
+document.getElementById("kabupatenDropdown").addEventListener("change", function () {
+  const selectedKabupaten = this.value;
+
+  if (selectedKabupaten === "all") {
+    filteredHotspot = hotspotData;
+  } else {
+    filteredHotspot = hotspotData.filter(d => d["Kab Kota"] === selectedKabupaten);
+  }
+
+  updateBarChart();
+  if (typeof updateHotspotLayer === "function") updateHotspotLayer();
+});
+
+// Ambil data JSON & inisialisasi semuanya
+fetch("hotspot.json")
+  .then((response) => response.json())
+  .then((data) => {
+    hotspotData = data;
+    filteredHotspot = hotspotData; // default: semua
+    populateKabupatenDropdown();
+    updateBarChart();
+    if (typeof updateHotspotLayer === "function") updateHotspotLayer();
+  })
+  .catch((err) => {
+    console.error("Gagal memuat hotspot.json:", err);
+  });
+</script>
+
+  </body>
+</html>
