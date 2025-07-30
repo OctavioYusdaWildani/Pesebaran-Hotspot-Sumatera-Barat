@@ -1,0 +1,21 @@
+            @if ($lamaran->status === 'melamar')
+                <div class="mt-6 flex gap-4">
+                    <!-- Lanjut ke proses berikut -->
+                    <form action="{{ route('lamaran.approve', $lamaran->id) }}" method="POST">
+                        @csrf
+                        <button class="bg-[#00205B] text-white font-bold py-2 px-4 rounded"
+                            onclick="return confirm('Lanjutkan ke proses selanjutnya?')">
+                            Continue Next Process
+                        </button>
+                    </form>
+
+                    <!-- Tolak lamaran -->
+                    <form action="{{ route('lamaran.reject', $lamaran->id) }}" method="POST">
+                        @csrf
+                        <button class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                            onclick="return confirm('Yakin menolak lamaran ini?')">
+                            Reject
+                        </button>
+                    </form>
+                </div>
+            @endif
