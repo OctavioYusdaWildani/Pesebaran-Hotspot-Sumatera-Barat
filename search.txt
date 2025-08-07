@@ -8,4 +8,23 @@
                     <img src="https://img.icons8.com/?size=100&id=W0xu6u7K9A0F&format=png&color=000000"
                         alt="Cari" class="w-5 h-6">
                 </button>
+
             </form>
+
+public function index(Request $request)
+    {
+        $query = Apply::with('ptk');
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('nama_lengkap', 'like', "%{$search}%")
+                ->orWhere('email', 'like', "%{$search}%")
+                ->orWhere('status', 'like', "%{$search}%");
+            });
+        }
+
+        $lamarans = $query->latest()->get();
+
+        return view('staff.lamaran.index', compact('lamarans'));
+    }
