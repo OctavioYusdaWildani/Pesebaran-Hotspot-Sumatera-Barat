@@ -28,3 +28,13 @@ public function index(Request $request)
 
         return view('staff.lamaran.index', compact('lamarans'));
     }
+
+
+
+
+->orWhere('telepon', 'like', "%{$search}%")
+                ->orWhereHas('ptk', function ($subQuery) use ($search) {
+                    $subQuery->where('jabatan', 'like', "%{$search}%")
+                            ->orWhere('unit', 'like', "%{$search}%")
+                            ->orWhere('departemen', 'like', "%{$search}%");
+                });
